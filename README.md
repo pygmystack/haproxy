@@ -1,18 +1,24 @@
+# the pygmy stack - haproxy image
+
+This image is a multiarchitecture compatible docker image
+
+This build a docker image from [haproxy](https://github.com/haproxy/haproxy/) with [nginx-proxy/docker-gen](https://github.com/nginx-proxy/docker-gen) pre-installed and configured to serve as a reverse proxy.
+
 # amazee.io haproxy
 
 This Images is part of the [amazee.io local docker development environment](https://docs.amazee.io/local_docker_development/local_docker_development.html). It provides a haproxy that serves as an reverse proxy in front of multiple Containers. This allows us to access multiple containers via nice URLs without the need to publish or know the ports of the containers.
 
 ## Usage
 
-When used together with [cachalot](https://docs.amazee.io/local_docker_development/os_x_cachalot.html) or [pygmy](https://docs.amazee.io/local_docker_development/pygmy.html) everything is already setup and ready to go. You don't have to worry more.
+When used together with pygmy everything is already setup and ready to go. You don't have to worry more.
 
 ## Start manually
 
-       docker run -d -p 80:80 -p 443:443 --volume=/var/run/docker.sock:/tmp/docker.sock --name=amazeeio-haproxy amazeeio/haproxy
+       docker run -d -p 80:80 -p 443:443 --volume=/var/run/docker.sock:/tmp/docker.sock --name=amazeeio-haproxy pygmystack/haproxy
 
 By default this Image will listen to port 80 and 443 for http and https connections. It is not forced though to this, with defining another port this Image also works, example:
 
-       docker run -d -p 8080:80 -p 4443:443 --volume=/var/run/docker.sock:/tmp/docker.sock --name=amazeeio-haproxy amazeeio/haproxy
+       docker run -d -p 8080:80 -p 4443:443 --volume=/var/run/docker.sock:/tmp/docker.sock --name=amazeeio-haproxy pygmystack/haproxy
 
 ## How it works
 
