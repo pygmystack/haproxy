@@ -1,4 +1,4 @@
-FROM haproxy:1.8-alpine3.14
+FROM haproxy:2.5-alpine3.14
 
 RUN apk update && apk --no-cache add bash
 
