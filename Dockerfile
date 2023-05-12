@@ -1,6 +1,9 @@
-FROM haproxy:2.5-alpine3.14
+FROM haproxy:2.6-alpine3.17
 
-RUN apk update && apk --no-cache add bash
+USER root
+
+RUN apk add --no-cache bash \
+    && rm -rf /var/cache/apk/*
 
 COPY --from=jwilder/docker-gen:latest /usr/local/bin/docker-gen /usr/local/bin/docker-gen
 
