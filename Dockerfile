@@ -1,4 +1,4 @@
-FROM haproxy:2.6-alpine3.17
+FROM haproxy:2.8-alpine3.17
 
 USER root
 
