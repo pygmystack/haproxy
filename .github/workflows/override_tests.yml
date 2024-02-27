@@ -1,0 +1,176 @@
+name: Override Tests 
+
+on:
+  push:
+    branches:
+      - "main"
+      - "dev"
+    tags:
+      - 'v*.*.*'
+  pull_request:
+    branches:
+      - 'main'
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    env:
+      GO111MODULE: on
+    steps:
+      - name: Wait for built images
+        uses: lewagon/wait-on-check-action@v1.3.3
+        with:
+          ref: ${{ github.ref }}
+          check-name: 'docker'
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          wait-interval: 10
+      - uses: actions/checkout@v4
+        # Establish some SSH keys.
+      - name: Setup SSH
+        run: |
+          eval $(ssh-agent);
+          ssh-keygen -t rsa -q -f "$HOME/.ssh/id_rsa" -N "";
+          ssh-keygen -t rsa -q -f "$HOME/.ssh/id_pwd" -N "passphrase";
+          ssh-add;
+          ssh-add -l;
+
+      -
+        name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          # list of Docker images to use as base name for tags
+          images: |
+            ghcr.io/${{ github.repository_owner }}/haproxy
+
+      - name: Find and Replace
+        uses: jacobtomlinson/gha-find-replace@v3
+        with:
+          find: "ghcr.io/pygmystack/haproxy:main"
+          replace: ${{ steps.meta.outputs.tags }}
+          include: "examples/**"
+
+      - name: Show changes
+        run: |
+          grep -n ghcr examples/*
+
+      - name: Install Dockerize
+        run: wget -O - https://github.com/jwilder/dockerize/releases/download/v0.7.0/dockerize-linux-amd64-v0.7.0.tar.gz | tar xzf - -C /usr/local/bin
+
+      - name: Install pygmy latest
+        run: |
+          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)";
+          brew tap pygmystack/pygmy;
+          brew install pygmy;
+          echo "/home/linuxbrew/.linuxbrew/bin" >> $GITHUB_PATH;
+
+      - name: Basic test
+        run: |
+          pygmy --config examples/pygmy.basic.yml pull;
+          pygmy --config examples/pygmy.basic.yml status;
+          pygmy --config examples/pygmy.basic.yml up;
+          pygmy --config examples/pygmy.basic.yml status;
+          pygmy --config examples/pygmy.basic.yml version;
+
+      - name: Show pygmy image versions
+        run: |
+          docker ps -a --filter "label=pygmy.name"
+
+      - name: Export configuration
+        run: pygmy --config examples/pygmy.basic.yml export -o ./exported-config.yml
+
+      - name: Show configuration
+        run: cat ./exported-config.yml
+
+#      - name: SSH Key test
+#        run: |
+#          pygmy addkey /home/runner/.ssh/id_rsa.pub;
+#          pygmy status;
+#          pygmy status | grep 'id_rsa';
+#          docker run --rm -i --volumes-from amazeeio-ssh-agent uselagoon/php-7.4-cli /usr/bin/ssh-add -l | grep 'id_rsa';
+
+      - name: Resolv file test
+        run: |
+          stat /usr/lib/systemd/resolved.conf.d/docker.amazee.io.conf;
+          grep "127.0.0.1" /usr/lib/systemd/resolved.conf.d/docker.amazee.io.conf;
+          grep "docker.amazee.io" /usr/lib/systemd/resolved.conf.d/docker.amazee.io.conf;
+
+      - name: Test the amazeeio-network for expected results
+        run: |
+          docker network inspect amazeeio-network | jq '.[].Name' | grep "amazeeio-network";
+          docker network inspect amazeeio-network | jq '.[].Containers' | jq '.[].Name' | grep "amazeeio-haproxy";
+          docker network inspect amazeeio-network | jq '.[].Containers' | jq '.[].Name' | grep "amazeeio-mailhog";
+          docker network inspect amazeeio-network | jq '.[].Containers' | jq '.[].Name' | grep "amazeeio-portainer";
+          docker network inspect amazeeio-network | jq '.[].Containers' | jq '.[].IPv4Address';
+          docker network inspect amazeeio-network | jq '.[].Containers' | jq '.[].IPv4Address' | grep "10.99.99.";
+
+      - name: Test for configured container tags.
+        run: |
+          docker inspect amazeeio-dnsmasq   | jq '.[].Config.Labels["pygmy.hocuspocus"]'  | grep "42";
+          docker inspect amazeeio-dnsmasq   | jq '.[].Config.Labels["pygmy.abracadabra"]' | grep "1";
+          docker inspect amazeeio-dnsmasq   | jq '.[].Config.Labels["pygmy.opensesame"]'  | grep "correct";
+          docker inspect amazeeio-haproxy   | jq '.[].Config.Labels["pygmy.hocuspocus"]'  | grep "42";
+          docker inspect amazeeio-haproxy   | jq '.[].Config.Labels["pygmy.abracadabra"]' | grep "1";
+          docker inspect amazeeio-haproxy   | jq '.[].Config.Labels["pygmy.opensesame"]'  | grep "correct";
+          docker inspect amazeeio-portainer | jq '.[].Config.Labels["pygmy.hocuspocus"]'  | grep "42";
+          docker inspect amazeeio-portainer | jq '.[].Config.Labels["pygmy.abracadabra"]' | grep "1";
+          docker inspect amazeeio-portainer | jq '.[].Config.Labels["pygmy.opensesame"]'  | grep "correct";
+          docker inspect amazeeio-ssh-agent | jq '.[].Config.Labels["pygmy.hocuspocus"]'  | grep "42";
+          docker inspect amazeeio-ssh-agent | jq '.[].Config.Labels["pygmy.abracadabra"]' | grep "1";
+          docker inspect amazeeio-ssh-agent | jq '.[].Config.Labels["pygmy.opensesame"]'  | grep "correct";
+          docker inspect amazeeio-mailhog   | jq '.[].Config.Labels["pygmy.hocuspocus"]'  | grep "42";
+          docker inspect amazeeio-mailhog   | jq '.[].Config.Labels["pygmy.abracadabra"]' | grep "1";
+          docker inspect amazeeio-mailhog   | jq '.[].Config.Labels["pygmy.opensesame"]'  | grep "correct";
+
+      - name: Cowsay test
+        run: pygmy --config examples/pygmy.basic.yml up | grep 'holy ship' || true;
+
+      - name: Test the container image overrides configuration
+        run: |
+          echo "Checking image references in started containers...";
+          docker container inspect amazeeio-haproxy   | jq '.[].Config.Image' | grep '${{ steps.meta.outputs.tags }}';
+          pygmy --config examples/pygmy.basic.yml clean;
+          pygmy --config examples/pygmy.yml up;
+          echo "Checking image references in started containers...";
+          docker container inspect amazeeio-haproxy   | jq '.[].Config.Image' | grep '${{ steps.meta.outputs.tags }}';
+
+      - name: Clone the official examples
+        run: |
+          git clone --recurse-submodules https://github.com/uselagoon/lagoon-examples.git
+
+      - name: "[Example] Drupal Base"
+        run: |
+          cd lagoon-examples/drupal-base;
+          docker-compose -p drupal-base up -d;
+          docker-compose -p drupal-base exec -T cli composer install;
+          dockerize -wait http://drupal-base.docker.amazee.io:80 -timeout 10s;
+          curl --HEAD http://drupal-base.docker.amazee.io;
+          curl --HEAD http://drupal-base.docker.amazee.io | grep -i "x-lagoon";
+          pygmy --config examples/pygmy.yml status | grep '\- http://drupal-base.docker.amazee.io';
+          docker-compose -p drupal-base down;
+          docker-compose -p drupal-base rm;
+          cd ../../;
+
+      - name: Test the stop command
+        run: |
+          pygmy --config examples/pygmy.yml down | grep 'Successfully removed amazeeio';
+          pygmy --config examples/pygmy.yml status | grep '\[ \] amazeeio-' | grep 'is not running';
+          pygmy --config examples/pygmy.yml status | grep 'Running as container amazeeio-' && false || true;
+          pygmy --config examples/pygmy.yml up;
+          pygmy --config examples/pygmy.yml status | grep 'Running as container amazeeio-' && true || false;
+
+      - name: Test the down command
+        run: |
+          pygmy --config examples/pygmy.yml stop | grep 'Successfully stopped amazeeio';
+          pygmy --config examples/pygmy.yml status | grep '\[ \] amazeeio-' | grep 'is not running';
+          pygmy --config examples/pygmy.yml status | grep 'Running as container amazeeio-' && false || true;
+          pygmy --config examples/pygmy.yml up;
+          pygmy --config examples/pygmy.yml status | grep 'Running as container amazeeio-' && true || false;
+
+      - name: Cleanup pygmy
+        run: pygmy clean;
+
+      - name: Cleanup after tests.
+        run: | 
+          docker system prune --all --force
+          docker volume prune --force
