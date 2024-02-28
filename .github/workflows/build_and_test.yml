@@ -1,5 +1,4 @@
-name: Override Tests 
-
+name: Build & Publish
 on:
   push:
     branches:
@@ -12,28 +11,68 @@ on:
       - 'main'
 
 jobs:
-  test:
-    runs-on: ubuntu-22.04
-    env:
-      GO111MODULE: on
+  docker:
+    runs-on: ubuntu-latest
     steps:
-      - name: Wait for built images
-        uses: lewagon/wait-on-check-action@v1.3.3
+      -
+        name: Checkout
+        uses: actions/checkout@v4
+      -
+        name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
         with:
-          ref: ${{ github.ref }}
-          check-name: 'docker'
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-          wait-interval: 10
-      - uses: actions/checkout@v4
+          # list of Docker images to use as base name for tags
+          images: |
+            ${{ github.repository_owner }}/haproxy
+            ghcr.io/${{ github.repository_owner }}/haproxy
+          labels: |
+            org.opencontainers.image.authors=the pygmy stack, The HAProxy Community (HAProxy)
+            org.opencontainers.image.description=dnsmasq DNS proxy, configured for use with the pygmy stack
+      -
+        name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      -
+        name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      -
+        name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      -
+        name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      -
+        name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  test:
+    needs: docker
+    runs-on: ubuntu-22.04
+    steps:
+      - 
+        uses: actions/checkout@v4
         # Establish some SSH keys.
-      - name: Setup SSH
+      - 
+        name: Setup SSH
         run: |
           eval $(ssh-agent);
           ssh-keygen -t rsa -q -f "$HOME/.ssh/id_rsa" -N "";
           ssh-keygen -t rsa -q -f "$HOME/.ssh/id_pwd" -N "passphrase";
           ssh-add;
           ssh-add -l;
-
       -
         name: Docker meta
         id: meta
@@ -42,60 +81,58 @@ jobs:
           # list of Docker images to use as base name for tags
           images: |
             ghcr.io/${{ github.repository_owner }}/haproxy
-
-      - name: Find and Replace
+      - 
+        name: Find and Replace
         uses: jacobtomlinson/gha-find-replace@v3
         with:
           find: "ghcr.io/pygmystack/haproxy:main"
           replace: ${{ steps.meta.outputs.tags }}
           include: "examples/**"
-
-      - name: Show changes
+      - 
+        name: Show changes
         run: |
           grep -n ghcr examples/*
-
-      - name: Install Dockerize
-        run: wget -O - https://github.com/jwilder/dockerize/releases/download/v0.7.0/dockerize-linux-amd64-v0.7.0.tar.gz | tar xzf - -C /usr/local/bin
-
-      - name: Install pygmy latest
+      - 
+        name: Install pygmy and dockerize via brew
         run: |
           eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)";
           brew tap pygmystack/pygmy;
           brew install pygmy;
+          brew install dockerize;
           echo "/home/linuxbrew/.linuxbrew/bin" >> $GITHUB_PATH;
-
-      - name: Basic test
+      - 
+        name: Basic test
         run: |
           pygmy --config examples/pygmy.basic.yml pull;
           pygmy --config examples/pygmy.basic.yml status;
           pygmy --config examples/pygmy.basic.yml up;
           pygmy --config examples/pygmy.basic.yml status;
           pygmy --config examples/pygmy.basic.yml version;
-
-      - name: Show pygmy image versions
+      - 
+        name: Show pygmy image versions
         run: |
           docker ps -a --filter "label=pygmy.name"
-
-      - name: Export configuration
+      - 
+        name: Export configuration
         run: pygmy --config examples/pygmy.basic.yml export -o ./exported-config.yml
-
-      - name: Show configuration
+      - 
+        name: Show configuration
         run: cat ./exported-config.yml
-
-#      - name: SSH Key test
+#      - 
+#        name: SSH Key test
 #        run: |
 #          pygmy addkey /home/runner/.ssh/id_rsa.pub;
 #          pygmy status;
 #          pygmy status | grep 'id_rsa';
 #          docker run --rm -i --volumes-from amazeeio-ssh-agent uselagoon/php-7.4-cli /usr/bin/ssh-add -l | grep 'id_rsa';
-
-      - name: Resolv file test
+      - 
+        name: Resolv file test
         run: |
           stat /usr/lib/systemd/resolved.conf.d/docker.amazee.io.conf;
           grep "127.0.0.1" /usr/lib/systemd/resolved.conf.d/docker.amazee.io.conf;
           grep "docker.amazee.io" /usr/lib/systemd/resolved.conf.d/docker.amazee.io.conf;
-
-      - name: Test the amazeeio-network for expected results
+      - 
+        name: Test the amazeeio-network for expected results
         run: |
           docker network inspect amazeeio-network | jq '.[].Name' | grep "amazeeio-network";
           docker network inspect amazeeio-network | jq '.[].Containers' | jq '.[].Name' | grep "amazeeio-haproxy";
@@ -103,8 +140,8 @@ jobs:
           docker network inspect amazeeio-network | jq '.[].Containers' | jq '.[].Name' | grep "amazeeio-portainer";
           docker network inspect amazeeio-network | jq '.[].Containers' | jq '.[].IPv4Address';
           docker network inspect amazeeio-network | jq '.[].Containers' | jq '.[].IPv4Address' | grep "10.99.99.";
-
-      - name: Test for configured container tags.
+      - 
+        name: Test for configured container tags.
         run: |
           docker inspect amazeeio-dnsmasq   | jq '.[].Config.Labels["pygmy.hocuspocus"]'  | grep "42";
           docker inspect amazeeio-dnsmasq   | jq '.[].Config.Labels["pygmy.abracadabra"]' | grep "1";
@@ -121,11 +158,11 @@ jobs:
           docker inspect amazeeio-mailhog   | jq '.[].Config.Labels["pygmy.hocuspocus"]'  | grep "42";
           docker inspect amazeeio-mailhog   | jq '.[].Config.Labels["pygmy.abracadabra"]' | grep "1";
           docker inspect amazeeio-mailhog   | jq '.[].Config.Labels["pygmy.opensesame"]'  | grep "correct";
-
-      - name: Cowsay test
+      - 
+        name: Cowsay test
         run: pygmy --config examples/pygmy.basic.yml up | grep 'holy ship' || true;
-
-      - name: Test the container image overrides configuration
+      - 
+        name: Test the container image overrides configuration
         run: |
           echo "Checking image references in started containers...";
           docker container inspect amazeeio-haproxy   | jq '.[].Config.Image' | grep '${{ steps.meta.outputs.tags }}';
@@ -133,12 +170,12 @@ jobs:
           pygmy --config examples/pygmy.yml up;
           echo "Checking image references in started containers...";
           docker container inspect amazeeio-haproxy   | jq '.[].Config.Image' | grep '${{ steps.meta.outputs.tags }}';
-
-      - name: Clone the official examples
+      - 
+        name: Clone the official examples
         run: |
           git clone --recurse-submodules https://github.com/uselagoon/lagoon-examples.git
-
-      - name: "[Example] Drupal Base"
+      - 
+        name: "[Example] Drupal Base"
         run: |
           cd lagoon-examples/drupal-base;
           docker-compose -p drupal-base up -d;
@@ -150,27 +187,27 @@ jobs:
           docker-compose -p drupal-base down;
           docker-compose -p drupal-base rm;
           cd ../../;
-
-      - name: Test the stop command
+      - 
+        name: Test the stop command
         run: |
           pygmy --config examples/pygmy.yml down | grep 'Successfully removed amazeeio';
           pygmy --config examples/pygmy.yml status | grep '\[ \] amazeeio-' | grep 'is not running';
           pygmy --config examples/pygmy.yml status | grep 'Running as container amazeeio-' && false || true;
           pygmy --config examples/pygmy.yml up;
           pygmy --config examples/pygmy.yml status | grep 'Running as container amazeeio-' && true || false;
-
-      - name: Test the down command
+      - 
+        name: Test the down command
         run: |
           pygmy --config examples/pygmy.yml stop | grep 'Successfully stopped amazeeio';
           pygmy --config examples/pygmy.yml status | grep '\[ \] amazeeio-' | grep 'is not running';
           pygmy --config examples/pygmy.yml status | grep 'Running as container amazeeio-' && false || true;
           pygmy --config examples/pygmy.yml up;
           pygmy --config examples/pygmy.yml status | grep 'Running as container amazeeio-' && true || false;
-
-      - name: Cleanup pygmy
+      - 
+        name: Cleanup pygmy
         run: pygmy clean;
-
-      - name: Cleanup after tests.
+      - 
+        name: Cleanup after tests.
         run: | 
           docker system prune --all --force
           docker volume prune --force
