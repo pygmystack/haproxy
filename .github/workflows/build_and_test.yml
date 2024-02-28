@@ -1,4 +1,4 @@
-name: Build & Publish
+name: Build, Test & Publish
 on:
   push:
     branches:
@@ -114,10 +114,12 @@ jobs:
           docker ps -a --filter "label=pygmy.name"
       - 
         name: Export configuration
-        run: pygmy --config examples/pygmy.basic.yml export -o ./exported-config.yml
+        run: |
+          pygmy --config examples/pygmy.basic.yml export -o ./exported-config.yml
       - 
         name: Show configuration
-        run: cat ./exported-config.yml
+        run: |
+          cat ./exported-config.yml
 #      - 
 #        name: SSH Key test
 #        run: |
@@ -131,6 +133,11 @@ jobs:
           stat /usr/lib/systemd/resolved.conf.d/docker.amazee.io.conf;
           grep "127.0.0.1" /usr/lib/systemd/resolved.conf.d/docker.amazee.io.conf;
           grep "docker.amazee.io" /usr/lib/systemd/resolved.conf.d/docker.amazee.io.conf;
+      -
+        name: haproxy test
+        run: | 
+          curl http://docker.amazee.io/stats | grep 'class=px' | grep 'mailhog.docker.amazee.io';
+          curl http://docker.amazee.io/stats | grep 'HAProxy version';
       - 
         name: Test the amazeeio-network for expected results
         run: |
@@ -160,7 +167,8 @@ jobs:
           docker inspect amazeeio-mailhog   | jq '.[].Config.Labels["pygmy.opensesame"]'  | grep "correct";
       - 
         name: Cowsay test
-        run: pygmy --config examples/pygmy.basic.yml up | grep 'holy ship' || true;
+        run: |
+          pygmy --config examples/pygmy.basic.yml up | grep 'holy ship' || true;
       - 
         name: Test the container image overrides configuration
         run: |
@@ -205,7 +213,8 @@ jobs:
           pygmy --config examples/pygmy.yml status | grep 'Running as container amazeeio-' && true || false;
       - 
         name: Cleanup pygmy
-        run: pygmy clean;
+        run: |
+          pygmy --config examples/pygmy.yml clean;
       - 
         name: Cleanup after tests.
         run: | 
