@@ -1,0 +1,3 @@
+services:
+  amazeeio-haproxy:
+    image: ghcr.io/pygmystack/haproxy:main
