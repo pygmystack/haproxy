@@ -1,4 +1,5 @@
 name: Build, Test & Publish
+
 on:
   push:
     branches:
@@ -81,6 +82,8 @@ jobs:
           # list of Docker images to use as base name for tags
           images: |
             ghcr.io/${{ github.repository_owner }}/haproxy
+          flavor: |
+            latest=false
       - 
         name: Find and Replace
         uses: jacobtomlinson/gha-find-replace@v3
