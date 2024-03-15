@@ -192,7 +192,7 @@ jobs:
           pygmy --config examples/pygmy.yml addkey /home/runner/.ssh/id_rsa;
           pygmy --config examples/pygmy.yml status;
           pygmy --config examples/pygmy.yml status | grep 'RSA';
-          docker run --rm -i --volumes-from amazeeio-ssh-agent ${{ steps.meta.outputs.tags }} /usr/bin/ssh-add -l | grep 'RSA';
+          docker run --rm -i --volumes-from amazeeio-ssh-agent pygmystack/ssh-agent /usr/bin/ssh-add -l | grep 'RSA';
       - 
         name: Clone the official examples
         run: |
