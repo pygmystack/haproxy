@@ -1,4 +1,5 @@
-name: Build & Publish
+name: Build, Test & Publish
+
 on:
   push:
     branches:
@@ -81,6 +82,8 @@ jobs:
           # list of Docker images to use as base name for tags
           images: |
             ghcr.io/${{ github.repository_owner }}/haproxy
+          flavor: |
+            latest=false
       - 
         name: Find and Replace
         uses: jacobtomlinson/gha-find-replace@v3
@@ -114,10 +117,12 @@ jobs:
           docker ps -a --filter "label=pygmy.name"
       - 
         name: Export configuration
-        run: pygmy --config examples/pygmy.basic.yml export -o ./exported-config.yml
+        run: |
+          pygmy --config examples/pygmy.basic.yml export -o ./exported-config.yml
       - 
         name: Show configuration
-        run: cat ./exported-config.yml
+        run: |
+          cat ./exported-config.yml
 #      - 
 #        name: SSH Key test
 #        run: |
@@ -131,13 +136,17 @@ jobs:
           stat /usr/lib/systemd/resolved.conf.d/docker.amazee.io.conf;
           grep "127.0.0.1" /usr/lib/systemd/resolved.conf.d/docker.amazee.io.conf;
           grep "docker.amazee.io" /usr/lib/systemd/resolved.conf.d/docker.amazee.io.conf;
+      -
+        name: haproxy test
+        run: | 
+          curl http://docker.amazee.io/stats | grep 'class=px' | grep 'mailhog.docker.amazee.io';
+          curl http://docker.amazee.io/stats | grep 'HAProxy version';
       - 
         name: Test the amazeeio-network for expected results
         run: |
           docker network inspect amazeeio-network | jq '.[].Name' | grep "amazeeio-network";
           docker network inspect amazeeio-network | jq '.[].Containers' | jq '.[].Name' | grep "amazeeio-haproxy";
           docker network inspect amazeeio-network | jq '.[].Containers' | jq '.[].Name' | grep "amazeeio-mailhog";
-          docker network inspect amazeeio-network | jq '.[].Containers' | jq '.[].Name' | grep "amazeeio-portainer";
           docker network inspect amazeeio-network | jq '.[].Containers' | jq '.[].IPv4Address';
           docker network inspect amazeeio-network | jq '.[].Containers' | jq '.[].IPv4Address' | grep "10.99.99.";
       - 
@@ -149,18 +158,12 @@ jobs:
           docker inspect amazeeio-haproxy   | jq '.[].Config.Labels["pygmy.hocuspocus"]'  | grep "42";
           docker inspect amazeeio-haproxy   | jq '.[].Config.Labels["pygmy.abracadabra"]' | grep "1";
           docker inspect amazeeio-haproxy   | jq '.[].Config.Labels["pygmy.opensesame"]'  | grep "correct";
-          docker inspect amazeeio-portainer | jq '.[].Config.Labels["pygmy.hocuspocus"]'  | grep "42";
-          docker inspect amazeeio-portainer | jq '.[].Config.Labels["pygmy.abracadabra"]' | grep "1";
-          docker inspect amazeeio-portainer | jq '.[].Config.Labels["pygmy.opensesame"]'  | grep "correct";
           docker inspect amazeeio-ssh-agent | jq '.[].Config.Labels["pygmy.hocuspocus"]'  | grep "42";
           docker inspect amazeeio-ssh-agent | jq '.[].Config.Labels["pygmy.abracadabra"]' | grep "1";
           docker inspect amazeeio-ssh-agent | jq '.[].Config.Labels["pygmy.opensesame"]'  | grep "correct";
           docker inspect amazeeio-mailhog   | jq '.[].Config.Labels["pygmy.hocuspocus"]'  | grep "42";
           docker inspect amazeeio-mailhog   | jq '.[].Config.Labels["pygmy.abracadabra"]' | grep "1";
           docker inspect amazeeio-mailhog   | jq '.[].Config.Labels["pygmy.opensesame"]'  | grep "correct";
-      - 
-        name: Cowsay test
-        run: pygmy --config examples/pygmy.basic.yml up | grep 'holy ship' || true;
       - 
         name: Test the container image overrides configuration
         run: |
@@ -205,7 +208,8 @@ jobs:
           pygmy --config examples/pygmy.yml status | grep 'Running as container amazeeio-' && true || false;
       - 
         name: Cleanup pygmy
-        run: pygmy clean;
+        run: |
+          pygmy --config examples/pygmy.yml clean;
       - 
         name: Cleanup after tests.
         run: | 
