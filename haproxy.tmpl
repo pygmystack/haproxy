@@ -15,6 +15,7 @@ global
   daemon
   maxconn 1024
   pidfile /var/run/haproxy.pid
+  tune.bufsize 32768
 
 defaults
   balance roundrobin
