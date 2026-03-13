@@ -15,10 +15,10 @@ IMAGE="${IMAGE_NAME:-pygmystack/haproxy:test}"
     [ -n "$output" ]
 }
 
-@test "haproxy version is 3.3.x" {
+@test "haproxy version is 2.9.x" {
     run docker run --rm "${IMAGE}" sh -c 'haproxy -v 2>&1'
     [ "$status" -eq 0 ]
-    [[ "$output" =~ "3.3" ]]
+    [[ "$output" =~ "2.9" ]]
 }
 
 @test "docker-gen binary is available in PATH" {
