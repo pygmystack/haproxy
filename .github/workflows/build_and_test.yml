@@ -88,7 +88,7 @@ jobs:
         name: Set single image tag
         id: single_tag
         run: |
-          echo "tag=$(echo '${{ steps.meta.outputs.tags }}' | head -n1)" >> $GITHUB_OUTPUT
+          echo "tag=$(echo '${{ steps.meta.outputs.tags }}' | head -n1)" >> "$GITHUB_OUTPUT"
       - 
         name: Find and Replace
         env:

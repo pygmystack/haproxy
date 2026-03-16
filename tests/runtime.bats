@@ -134,7 +134,7 @@ _require_docker_socket() {
 # HAProxy stats page — mirrors the GitHub Actions "haproxy test" step.
 # ---------------------------------------------------------------------------
 
-@test "stats page is accessible on port 80" {
+@test "stats page is accessible via published HTTP port" {
     _require_docker_socket
     run curl -sf "http://localhost:${TEST_PORT}/stats"
     [ "$status" -eq 0 ]
@@ -176,7 +176,7 @@ _require_docker_socket() {
     # Wait for docker-gen to detect the new container and reload haproxy.
     local max_wait=20
     local waited=0
-    until curl -s "http://localhost:${TEST_PORT}/stats" | grep -q "${backend_host}"; do
+    until curl -s "http://localhost:${TEST_PORT}/stats" | grep -Fq -- "${backend_host}"; do
         sleep 1
         waited=$((waited + 1))
         [ "$waited" -lt "$max_wait" ] || break
@@ -184,7 +184,7 @@ _require_docker_socket() {
 
     run curl -s "http://localhost:${TEST_PORT}/stats"
     [ "$status" -eq 0 ]
-    [[ "$output" =~ "${backend_host}" ]]
+    [[ "$output" == *"${backend_host}"* ]]
 
     docker rm -f "${BACKEND_AMAZEEIO}" 2>/dev/null || true
 }
@@ -205,7 +205,7 @@ _require_docker_socket() {
     # Wait for docker-gen to detect the new container and reload haproxy.
     local max_wait=20
     local waited=0
-    until curl -s "http://localhost:${TEST_PORT}/stats" | grep -q "${backend_host}"; do
+    until curl -s "http://localhost:${TEST_PORT}/stats" | grep -Fq -- "${backend_host}"; do
         sleep 1
         waited=$((waited + 1))
         [ "$waited" -lt "$max_wait" ] || break
@@ -213,7 +213,7 @@ _require_docker_socket() {
 
     run curl -s "http://localhost:${TEST_PORT}/stats"
     [ "$status" -eq 0 ]
-    [[ "$output" =~ "${backend_host}" ]]
+    [[ "$output" == *"${backend_host}"* ]]
 
     docker rm -f "${BACKEND_LAGOON}" 2>/dev/null || true
 }
