@@ -44,11 +44,11 @@ test-runtime: ## Run container runtime and integration tests (Docker socket requ
 validate-config: ## Validate the default haproxy.cfg syntax
 	docker run --rm $(FULL_IMAGE) haproxy -c -f /app/haproxy.cfg
 
-up: ## Start the stack with docker-compose
-	docker-compose up -d
+up: ## Start the stack with docker compose
+	docker compose up -d
 
-down: ## Stop the stack with docker-compose
-	docker-compose down
+down: ## Stop the stack with docker compose
+	docker compose down
 
 shell: ## Open an interactive shell inside the container
 	docker run --rm -it --entrypoint bash $(FULL_IMAGE)

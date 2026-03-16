@@ -84,17 +84,22 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/haproxy
           flavor: |
             latest=false
+      -
+        name: Set single image tag
+        id: single_tag
+        run: |
+          echo "tag=$(echo '${{ steps.meta.outputs.tags }}' | head -n1)" >> $GITHUB_OUTPUT
       - 
         name: Find and Replace
         env:
-          IMAGE_TAG: ${{ steps.meta.outputs.tags }}
+          IMAGE_TAG: ${{ steps.single_tag.outputs.tag }}
         run: |
           find examples/ -type f -exec sed -i.bak "s|ghcr.io/pygmystack/haproxy:main|${IMAGE_TAG}|g" {} \;
           find examples/ -name "*.bak" -delete
           grep -n ghcr examples/*
       - 
         name: Set up Homebrew
-        uses: Homebrew/actions/setup-homebrew@main
+        uses: Homebrew/actions/setup-homebrew@fb0fe15d936a80ac0ba4c6cee691bc3da3f00f4e # main
       - 
         name: Install homebrew packages
         env:
@@ -108,11 +113,11 @@ jobs:
           pygmy version;
       -
         name: Pull image for tests
-        run: docker pull ${{ steps.meta.outputs.tags }}
+        run: docker pull ${{ steps.single_tag.outputs.tag }}
       - 
         name: Run BATS tests
         env: 
-          IMAGE_NAME: ${{ steps.meta.outputs.tags }}
+          IMAGE_NAME: ${{ steps.single_tag.outputs.tag }}
         run: |
           bats --tap tests/image_structure.bats
           bats --tap tests/runtime.bats
@@ -135,7 +140,7 @@ jobs:
           pygmy --config examples/pygmy.basic.yml export -o ./exported-config.yml
           cat ./exported-config.yml
           echo "Checking image references in started containers...";
-          docker container inspect amazeeio-haproxy  | jq '.[].Config.Image' | grep -F '${{ steps.meta.outputs.tags }}';
+          docker container inspect amazeeio-haproxy  | jq '.[].Config.Image' | grep -F '${{ steps.single_tag.outputs.tag }}';
       - 
         name: Resolv file test
         run: |
@@ -197,7 +202,7 @@ jobs:
           pygmy --config examples/pygmy.yml export -o ./exported-config-2.yml
           cat ./exported-config-2.yml
           echo "Checking image references in started containers...";
-          docker container inspect amazeeio-haproxy   | jq '.[].Config.Image' | grep -F '${{ steps.meta.outputs.tags }}';
+          docker container inspect amazeeio-haproxy   | jq '.[].Config.Image' | grep -F '${{ steps.single_tag.outputs.tag }}';
       - 
         name: SSH Key test
         run: |

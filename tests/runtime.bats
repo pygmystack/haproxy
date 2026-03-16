@@ -12,17 +12,31 @@
 bats_require_minimum_version 1.5.0
 
 IMAGE="${IMAGE_NAME:-pygmystack/haproxy:test}"
-HAPROXY_CONTAINER="haproxy-bats-test"
-BACKEND_AMAZEEIO="haproxy-bats-backend-amazeeio"
-BACKEND_LAGOON="haproxy-bats-backend-lagoon"
-DOCKER_SOCKET="/var/run/docker.sock"
-TEST_PORT="18080"
 
+# Container name variables are set in setup() by reading the suffix written by
+# setup_file(). This ensures all tests share the same names despite BATS
+# re-sourcing the file for each test.
+HAPROXY_CONTAINER=""
+BACKEND_AMAZEEIO=""
+BACKEND_LAGOON=""
+DOCKER_SOCKET="/var/run/docker.sock"
+
+# TEST_PORT is discovered dynamically in setup_file() using an ephemeral host port.
+TEST_PORT=""
 # ---------------------------------------------------------------------------
 # File-level setup / teardown — container is started once for the entire file.
 # ---------------------------------------------------------------------------
 
 setup_file() {
+    # Generate a unique suffix once and persist it so every test in this run
+    # references the same container names (BATS re-sources the file per test).
+    local suffix
+    suffix="$(openssl rand -hex 4)"
+    echo "${suffix}" > "${BATS_SUITE_TMPDIR}/.suffix"
+    HAPROXY_CONTAINER="haproxy-bats-test-${suffix}"
+    BACKEND_AMAZEEIO="haproxy-bats-backend-amazeeio-${suffix}"
+    BACKEND_LAGOON="haproxy-bats-backend-lagoon-${suffix}"
+
     if [ ! -S "${DOCKER_SOCKET}" ]; then
         echo "# Docker socket not found at ${DOCKER_SOCKET} – skipping runtime tests" >&3
         return 0
@@ -34,19 +48,24 @@ setup_file() {
     docker run -d \
         --name "${HAPROXY_CONTAINER}" \
         --volume "${DOCKER_SOCKET}:/tmp/docker.sock" \
-        -p "${TEST_PORT}:80" \
+        -p 0:80 \
         "${IMAGE}"
+
+    # Discover the ephemeral host port assigned by Docker.
+    local port
+    port="$(docker port "${HAPROXY_CONTAINER}" 80 | head -n1 | awk -F: '{print $NF}')"
+    echo "${port}" > "${BATS_SUITE_TMPDIR}/.port"
 
     # Wait for docker-gen to run once and reload haproxy with the stats frontend.
     # The template includes "stats uri /stats", so /stats becomes available only
     # after the first docker-gen pass — give it up to 30 seconds.
     local max_wait=30
     local waited=0
-    until curl -sf "http://localhost:${TEST_PORT}/stats" >/dev/null 2>&1; do
+    until curl -sf "http://localhost:${port}/stats" >/dev/null 2>&1; do
         sleep 1
         waited=$((waited + 1))
         if [ "$waited" -ge "$max_wait" ]; then
-            echo "# Timed out waiting for haproxy /stats endpoint" >&3
+            echo "# Timed out waiting for haproxy /stats endpoint (port ${port})" >&3
             docker logs "${HAPROXY_CONTAINER}" >&3 2>&3
             break
         fi
@@ -54,9 +73,25 @@ setup_file() {
 }
 
 teardown_file() {
-    docker rm -f "${HAPROXY_CONTAINER}"     2>/dev/null || true
-    docker rm -f "${BACKEND_AMAZEEIO}"      2>/dev/null || true
-    docker rm -f "${BACKEND_LAGOON}"        2>/dev/null || true
+    local suffix
+    suffix="$(cat "${BATS_SUITE_TMPDIR}/.suffix" 2>/dev/null || true)"
+    docker rm -f "haproxy-bats-test-${suffix}"              2>/dev/null || true
+    docker rm -f "haproxy-bats-backend-amazeeio-${suffix}"  2>/dev/null || true
+    docker rm -f "haproxy-bats-backend-lagoon-${suffix}"    2>/dev/null || true
+}
+
+# ---------------------------------------------------------------------------
+# Per-test setup — restore container name variables from the stable suffix
+# written by setup_file(), because BATS re-sources the file for every test.
+# ---------------------------------------------------------------------------
+
+setup() {
+    local suffix
+    suffix="$(cat "${BATS_SUITE_TMPDIR}/.suffix" 2>/dev/null || true)"
+    HAPROXY_CONTAINER="haproxy-bats-test-${suffix}"
+    BACKEND_AMAZEEIO="haproxy-bats-backend-amazeeio-${suffix}"
+    BACKEND_LAGOON="haproxy-bats-backend-lagoon-${suffix}"
+    TEST_PORT="$(cat "${BATS_SUITE_TMPDIR}/.port" 2>/dev/null || true)"
 }
 
 # ---------------------------------------------------------------------------
