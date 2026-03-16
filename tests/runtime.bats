@@ -67,7 +67,7 @@ setup_file() {
         if [ "$waited" -ge "$max_wait" ]; then
             echo "# Timed out waiting for haproxy /stats endpoint (port ${port})" >&3
             docker logs "${HAPROXY_CONTAINER}" >&3 2>&3
-            break
+            return 1
         fi
     done
 }
@@ -125,7 +125,7 @@ _require_docker_socket() {
 @test "docker-gen process is running inside the container" {
     _require_docker_socket
     run docker exec "${HAPROXY_CONTAINER}" sh -c \
-        'ps aux 2>/dev/null | grep -c "[d]ocker-gen"'
+        'pidof docker-gen >/dev/null 2>&1 && echo 1 || echo 0'
     [ "$status" -eq 0 ]
     [ "$output" -ge 1 ]
 }
@@ -170,7 +170,7 @@ _require_docker_socket() {
         -e AMAZEEIO=AMAZEEIO \
         -e "AMAZEEIO_URL=${backend_host}" \
         -e AMAZEEIO_HTTP_PORT=80 \
-        -p 80 \
+        --expose 80 \
         nginx:alpine
 
     # Wait for docker-gen to detect the new container and reload haproxy.
@@ -199,7 +199,7 @@ _require_docker_socket() {
         --name "${BACKEND_LAGOON}" \
         -e LAGOON_LOCALDEV_HTTP_PORT=8080 \
         -e "LAGOON_ROUTE=http://${backend_host}" \
-        -p 8080 \
+        --expose 8080 \
         nginx:alpine
 
     # Wait for docker-gen to detect the new container and reload haproxy.
