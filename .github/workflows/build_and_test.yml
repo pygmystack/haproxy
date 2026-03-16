@@ -17,11 +17,11 @@ jobs:
     steps:
       -
         name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       -
         name: Docker meta
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf # v6.0.0
         with:
           # list of Docker images to use as base name for tags
           images: |
@@ -32,26 +32,26 @@ jobs:
             org.opencontainers.image.description=dnsmasq DNS proxy, configured for use with the pygmy stack
       -
         name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
       -
         name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
       -
         name: Login to DockerHub
-        uses: docker/login-action@v3
+        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       -
         name: Login to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
       -
         name: Build and push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
         with:
           context: .
           platforms: linux/amd64,linux/arm64
@@ -61,15 +61,15 @@ jobs:
 
   test:
     needs: docker
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
       - 
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         # Establish some SSH keys.
       - 
         name: Setup SSH
         run: |
-          eval $(ssh-agent);
+          eval "$(ssh-agent)";
           ssh-keygen -t rsa -q -f "$HOME/.ssh/id_rsa" -N "";
           ssh-keygen -t rsa -q -f "$HOME/.ssh/id_pwd" -N "passphrase";
           ssh-add;
@@ -77,33 +77,50 @@ jobs:
       -
         name: Docker meta
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf # v6.0.0
         with:
           # list of Docker images to use as base name for tags
           images: |
             ghcr.io/${{ github.repository_owner }}/haproxy
           flavor: |
             latest=false
+      -
+        name: Set single image tag
+        id: single_tag
+        run: |
+          echo "tag=$(echo '${{ steps.meta.outputs.tags }}' | head -n1)" >> "$GITHUB_OUTPUT"
       - 
         name: Find and Replace
-        uses: jacobtomlinson/gha-find-replace@v3
-        with:
-          find: "ghcr.io/pygmystack/haproxy:main"
-          replace: ${{ steps.meta.outputs.tags }}
-          include: "examples/**"
-      - 
-        name: Show changes
+        env:
+          IMAGE_TAG: ${{ steps.single_tag.outputs.tag }}
         run: |
+          find examples/ -type f -exec sed -i.bak "s|ghcr.io/pygmystack/haproxy:main|${IMAGE_TAG}|g" {} \;
+          find examples/ -name "*.bak" -delete
           grep -n ghcr examples/*
       - 
-        name: Install pygmy and dockerize via brew
+        name: Set up Homebrew
+        uses: Homebrew/actions/setup-homebrew@fb0fe15d936a80ac0ba4c6cee691bc3da3f00f4e # main
+      - 
+        name: Install homebrew packages
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+          HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
+          HOMEBREW_NO_ENV_HINTS: 1
         run: |
-          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)";
-          brew tap pygmystack/pygmy;
-          brew install pygmy;
+          brew install bats-core;
           brew install dockerize;
-          echo "/home/linuxbrew/.linuxbrew/bin" >> $GITHUB_PATH;
+          brew install pygmystack/pygmy/pygmy;
           pygmy version;
+      -
+        name: Pull image for tests
+        run: docker pull ${{ steps.single_tag.outputs.tag }}
+      - 
+        name: Run BATS tests
+        env: 
+          IMAGE_NAME: ${{ steps.single_tag.outputs.tag }}
+        run: |
+          bats --tap tests/image_structure.bats
+          bats --tap tests/runtime.bats
       - 
         name: Switch pygmy configs from vanilla to basic
         run: |
@@ -123,7 +140,7 @@ jobs:
           pygmy --config examples/pygmy.basic.yml export -o ./exported-config.yml
           cat ./exported-config.yml
           echo "Checking image references in started containers...";
-          docker container inspect amazeeio-haproxy  | jq '.[].Config.Image' | grep '${{ steps.meta.outputs.tags }}';
+          docker container inspect amazeeio-haproxy  | jq '.[].Config.Image' | grep -F '${{ steps.single_tag.outputs.tag }}';
       - 
         name: Resolv file test
         run: |
@@ -185,7 +202,7 @@ jobs:
           pygmy --config examples/pygmy.yml export -o ./exported-config-2.yml
           cat ./exported-config-2.yml
           echo "Checking image references in started containers...";
-          docker container inspect amazeeio-haproxy   | jq '.[].Config.Image' | grep '${{ steps.meta.outputs.tags }}';
+          docker container inspect amazeeio-haproxy   | jq '.[].Config.Image' | grep -F '${{ steps.single_tag.outputs.tag }}';
       - 
         name: SSH Key test
         run: |
@@ -201,14 +218,14 @@ jobs:
         name: "[Example] Drupal Base"
         run: |
           cd lagoon-examples/drupal-base;
-          docker-compose -p drupal-base up -d;
-          docker-compose -p drupal-base exec -T cli composer install;
+          docker compose -p drupal-base up -d;
+          docker compose -p drupal-base exec -T cli composer install;
           dockerize -wait http://drupal-base.docker.amazee.io:80 -timeout 10s;
-          curl --HEAD http://drupal-base.docker.amazee.io;
-          curl --HEAD http://drupal-base.docker.amazee.io | grep -i "x-lagoon";
+          curl --head http://drupal-base.docker.amazee.io;
+          curl --head http://drupal-base.docker.amazee.io | grep -i "x-lagoon";
           pygmy --config examples/pygmy.yml status | grep '\- http://drupal-base.docker.amazee.io';
-          docker-compose -p drupal-base down;
-          docker-compose -p drupal-base rm;
+          docker compose -p drupal-base down;
+          docker compose -p drupal-base rm -f;
           cd ../../;
       - 
         name: Test the stop command
