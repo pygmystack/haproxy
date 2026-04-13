@@ -15,10 +15,12 @@ IMAGE="${IMAGE_NAME:-pygmystack/haproxy:test}"
     [ -n "$output" ]
 }
 
-@test "haproxy version is 2.9.x" {
+@test "haproxy version matches Dockerfile" {
+    local expected_version
+    expected_version="$(grep -oE '^FROM haproxy:[0-9]+\.[0-9]+' "${BATS_TEST_DIRNAME}/../Dockerfile" | grep -oE '[0-9]+\.[0-9]+')"
     run docker run --rm "${IMAGE}" sh -c 'haproxy -v 2>&1'
     [ "$status" -eq 0 ]
-    [[ "$output" =~ "2.9" ]]
+    [[ "$output" =~ "HAProxy version ${expected_version}" ]]
 }
 
 @test "docker-gen binary is available in PATH" {
