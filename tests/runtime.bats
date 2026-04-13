@@ -154,6 +154,21 @@ _require_docker_socket() {
     [[ "$output" =~ "class=px" ]]
 }
 
+@test "tune.bufsize allows request headers larger than the default 16 KB" {
+    _require_docker_socket
+    # Send a header value between the default tune.bufsize (16384) and the
+    # configured value (32768).  With the default bufsize HAProxy would drop the
+    # connection (curl gets "000"); with the configured 32768 it fits and HAProxy
+    # serves the stats page with a 200.  Asserting exactly 200 catches both cases.
+    local large_value
+    large_value="$(python3 -c 'print("A" * 30000)')"
+    run curl -s -o /dev/null -w "%{http_code}" \
+        -H "X-Large-Header: ${large_value}" \
+        "http://localhost:${TEST_PORT}/stats"
+    [ "$status" -eq 0 ]
+    [ "$output" = "200" ]
+}
+
 # ---------------------------------------------------------------------------
 # Integration — backend containers appear in the generated haproxy config.
 # These tests mirror the "mailhog test" / backend discovery steps in CI.
