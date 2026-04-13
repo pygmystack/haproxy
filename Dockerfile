@@ -10,7 +10,7 @@ COPY --from=jwilder/docker-gen:latest /usr/local/bin/docker-gen /usr/local/bin/d
 COPY . /app/
 WORKDIR /app/
 
-ENV DOCKER_HOST unix:///tmp/docker.sock
+ENV DOCKER_HOST=unix:///tmp/docker.sock
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["/app/haproxy_start.sh"]
 EXPOSE 80 443
