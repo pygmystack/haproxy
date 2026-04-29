@@ -13,7 +13,7 @@ on:
 
 jobs:
   ci:
-    uses: pygmystack/.github/workflows/container-build-test-publish.yml@main
+    uses: pygmystack/.github/.github/workflows/container-build-test-publish.yml@main
     with:
       image_name: haproxy
       replace_source: ghcr.io/pygmystack/haproxy:main
