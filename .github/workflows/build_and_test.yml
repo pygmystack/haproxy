@@ -13,9 +13,10 @@ on:
 
 jobs:
   ci:
-    uses: pygmystack/.github/.github/workflows/container-build-test-publish.yml@main
+    uses: pygmystack/.github/.github/workflows/container-build-test-publish.yml@legacy-name
     with:
-      image_name: haproxy
+      image_name: proxy
+      image_name_legacy: haproxy
       replace_source: ghcr.io/pygmystack/haproxy:main
       oc_authors: the pygmy stack, The HAProxy Community (HAProxy)
       oc_description: HAProxy reverse proxy, configured for use with the pygmy stack
