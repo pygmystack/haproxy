@@ -142,9 +142,13 @@ _require_docker_socket() {
 
 @test "stats page contains HAProxy version information" {
     _require_docker_socket
+    local expected_version
+    expected_version="$(grep -oE '^FROM haproxy:[0-9]+\.[0-9]+' "${BATS_TEST_DIRNAME}/../Dockerfile" | grep -oE '[0-9]+\.[0-9]+')"
     run curl -s "http://localhost:${TEST_PORT}/stats"
     [ "$status" -eq 0 ]
-    [[ "$output" =~ "HAProxy version" ]]
+    # HAProxy 3.x stats page reports the version as "v<major>.<minor>" in the updates link
+    [[ "$output" =~ "Statistics Report for" ]]
+    [[ "$output" =~ "v${expected_version}" ]]
 }
 
 @test "stats page contains the statistics table" {

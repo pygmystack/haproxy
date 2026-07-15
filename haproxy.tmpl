@@ -6,7 +6,7 @@
   server {{ .Address.IP }}:{{ .Address.Port }} {{ .Address.IP }}:{{ .Address.Port }} check
     {{ else }}
   # {{ .Container.Name }}
-  server {{ .Container.Name }}:{{ .Address.Port }} {{ .Container.Name }}:{{ .Address.Port }} check
+  server {{ .Container.Name }}:{{ .Address.Port }} {{ .Container.Name }}:{{ .Address.Port }} check init-addr last,libc,none
     {{ end }}
   {{ end }}
 {{ end }}
