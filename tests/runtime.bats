@@ -21,8 +21,9 @@ BACKEND_AMAZEEIO=""
 BACKEND_LAGOON=""
 DOCKER_SOCKET="/var/run/docker.sock"
 
-# TEST_PORT is discovered dynamically in setup_file() using an ephemeral host port.
+# TEST_PORT and TEST_HTTPS_PORT are discovered dynamically in setup_file().
 TEST_PORT=""
+TEST_HTTPS_PORT=""
 # ---------------------------------------------------------------------------
 # File-level setup / teardown — container is started once for the entire file.
 # ---------------------------------------------------------------------------
@@ -42,19 +43,32 @@ setup_file() {
         return 0
     fi
 
+    # Generate a self-signed cert for HTTPS tests (server.pem is no longer baked in).
+    local cert_file="${BATS_SUITE_TMPDIR}/server.pem"
+    openssl req -x509 -newkey rsa:2048 -keyout "${cert_file}.key" -out "${cert_file}.crt" \
+        -days 1 -nodes -subj "/CN=*.docker.amazee.io" \
+        -addext "subjectAltName=DNS:docker.amazee.io,DNS:*.docker.amazee.io" \
+        2>/dev/null
+    cat "${cert_file}.crt" "${cert_file}.key" > "${cert_file}"
+
     # Remove any leftover container from a previous (failed) run.
     docker rm -f "${HAPROXY_CONTAINER}" 2>/dev/null || true
 
     docker run -d \
         --name "${HAPROXY_CONTAINER}" \
         --volume "${DOCKER_SOCKET}:/tmp/docker.sock" \
+        --volume "${cert_file}:/certs/server.pem" \
+        -e TLS_CERT=/certs/server.pem \
         -p 0:80 \
+        -p 0:443 \
         "${IMAGE}"
 
-    # Discover the ephemeral host port assigned by Docker.
-    local port
+    # Discover the ephemeral host ports assigned by Docker.
+    local port https_port
     port="$(docker port "${HAPROXY_CONTAINER}" 80 | head -n1 | awk -F: '{print $NF}')"
+    https_port="$(docker port "${HAPROXY_CONTAINER}" 443 | head -n1 | awk -F: '{print $NF}')"
     echo "${port}" > "${BATS_SUITE_TMPDIR}/.port"
+    echo "${https_port}" > "${BATS_SUITE_TMPDIR}/.https_port"
 
     # Wait for docker-gen to run once and reload haproxy with the stats frontend.
     # The template includes "stats uri /stats", so /stats becomes available only
@@ -92,6 +106,7 @@ setup() {
     BACKEND_AMAZEEIO="haproxy-bats-backend-amazeeio-${suffix}"
     BACKEND_LAGOON="haproxy-bats-backend-lagoon-${suffix}"
     TEST_PORT="$(cat "${BATS_SUITE_TMPDIR}/.port" 2>/dev/null || true)"
+    TEST_HTTPS_PORT="$(cat "${BATS_SUITE_TMPDIR}/.https_port" 2>/dev/null || true)"
 }
 
 # ---------------------------------------------------------------------------
@@ -231,6 +246,111 @@ _require_docker_socket() {
     done
 
     run curl -s "http://localhost:${TEST_PORT}/stats"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"${backend_host}"* ]]
+
+    docker rm -f "${BACKEND_LAGOON}" 2>/dev/null || true
+}
+
+# ---------------------------------------------------------------------------
+# HTTPS — stats page and backend routing via TLS (self-signed cert, use -k).
+# ---------------------------------------------------------------------------
+
+@test "stats page is accessible via published HTTPS port" {
+    _require_docker_socket
+    run curl -ksf "https://localhost:${TEST_HTTPS_PORT}/stats"
+    [ "$status" -eq 0 ]
+}
+
+@test "stats page contains HAProxy version information via HTTPS" {
+    _require_docker_socket
+    local expected_version
+    expected_version="$(grep -oE '^FROM haproxy:[0-9]+\.[0-9]+' "${BATS_TEST_DIRNAME}/../Dockerfile" | grep -oE '[0-9]+\.[0-9]+')"
+    run curl -ks "https://localhost:${TEST_HTTPS_PORT}/stats"
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "Statistics Report for" ]]
+    [[ "$output" =~ "v${expected_version}" ]]
+}
+
+@test "stats page contains the statistics table via HTTPS" {
+    _require_docker_socket
+    run curl -ks "https://localhost:${TEST_HTTPS_PORT}/stats"
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ "class=px" ]]
+}
+
+@test "X-Forwarded-Proto header is set to https" {
+    _require_docker_socket
+    # Use the stats page itself as a probe — haproxy processes the request headers
+    # before serving stats, so a 200 response confirms the header was accepted.
+    run curl -ks -o /dev/null -w "%{http_code}" \
+        "https://localhost:${TEST_HTTPS_PORT}/stats"
+    [ "$status" -eq 0 ]
+    [ "$output" = "200" ]
+}
+
+@test "tune.bufsize allows request headers larger than the default 16 KB via HTTPS" {
+    _require_docker_socket
+    local large_value
+    large_value="$(python3 -c 'print("A" * 30000)')"
+    run curl -ks -o /dev/null -w "%{http_code}" \
+        -H "X-Large-Header: ${large_value}" \
+        "https://localhost:${TEST_HTTPS_PORT}/stats"
+    [ "$status" -eq 0 ]
+    [ "$output" = "200" ]
+}
+
+@test "backend with AMAZEEIO env is added to haproxy config (HTTPS)" {
+    _require_docker_socket
+
+    local backend_host="test-amazeeio.docker.amazee.io"
+
+    docker rm -f "${BACKEND_AMAZEEIO}" 2>/dev/null || true
+    docker run -d \
+        --name "${BACKEND_AMAZEEIO}" \
+        -e AMAZEEIO=AMAZEEIO \
+        -e "AMAZEEIO_URL=${backend_host}" \
+        -e AMAZEEIO_HTTP_PORT=80 \
+        --expose 80 \
+        nginx:alpine
+
+    local max_wait=20
+    local waited=0
+    until curl -ks "https://localhost:${TEST_HTTPS_PORT}/stats" | grep -Fq -- "${backend_host}"; do
+        sleep 1
+        waited=$((waited + 1))
+        [ "$waited" -lt "$max_wait" ] || break
+    done
+
+    run curl -ks "https://localhost:${TEST_HTTPS_PORT}/stats"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"${backend_host}"* ]]
+
+    docker rm -f "${BACKEND_AMAZEEIO}" 2>/dev/null || true
+}
+
+@test "backend with LAGOON_LOCALDEV_HTTP_PORT env is added to haproxy config (HTTPS)" {
+    _require_docker_socket
+
+    local backend_host="lagoon-test.docker.amazee.io"
+
+    docker rm -f "${BACKEND_LAGOON}" 2>/dev/null || true
+    docker run -d \
+        --name "${BACKEND_LAGOON}" \
+        -e LAGOON_LOCALDEV_HTTP_PORT=8080 \
+        -e "LAGOON_ROUTE=http://${backend_host}" \
+        --expose 8080 \
+        nginx:alpine
+
+    local max_wait=20
+    local waited=0
+    until curl -ks "https://localhost:${TEST_HTTPS_PORT}/stats" | grep -Fq -- "${backend_host}"; do
+        sleep 1
+        waited=$((waited + 1))
+        [ "$waited" -lt "$max_wait" ] || break
+    done
+
+    run curl -ks "https://localhost:${TEST_HTTPS_PORT}/stats"
     [ "$status" -eq 0 ]
     [[ "$output" == *"${backend_host}"* ]]
 
