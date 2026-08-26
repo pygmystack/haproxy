@@ -11,6 +11,19 @@
   {{ end }}
 {{ end }}
 
+{{ define "upstream_ssl" }}
+  {{ if .Address }}
+    {{/* If port is not published on host, use container's IP:PORT */}}
+    {{ if .Address.IP }}
+  # {{ .Container.Name }}
+  server {{ .Address.IP }}:{{ .Address.Port }} {{ .Address.IP }}:{{ .Address.Port }} check ssl verify none
+    {{ else }}
+  # {{ .Container.Name }}
+  server {{ .Container.Name }}:{{ .Address.Port }} {{ .Container.Name }}:{{ .Address.Port }} check ssl verify none init-addr last,libc,none
+    {{ end }}
+  {{ end }}
+{{ end }}
+
 global
   daemon
   maxconn 1024
@@ -61,6 +74,7 @@ frontend https
   stats uri /stats
 {{range $key, $container := whereExist $ "Env.AMAZEEIO" }}
   {{$host := coalesce $container.Env.AMAZEEIO_URL $container.Name }}
+  use_backend https_{{$host}} if { hdr_dom(host) -i {{$host}} } { nbsrv(https_{{$host}}) gt 0 }
   use_backend http_{{$host}} if { hdr_dom(host) -i {{$host}} }
 {{end}}
 {{range $key, $container := whereExist $ "Env.LAGOON_LOCALDEV_HTTP_PORT" }}
@@ -78,6 +92,16 @@ backend http_{{$host}}
   mode http
   {{ $address := where $container.Addresses "Port" $http_port | first }}
   {{ template "upstream" (dict "Container" $container "Address" $address) }}
+{{end}}
+
+{{range $key, $container := whereExist $ "Env.AMAZEEIO" }}
+  {{$host := coalesce $container.Env.AMAZEEIO_URL $container.Name }}
+  {{/* Allow containers to set their port for HTTPS connections via AMAZEEIO_HTTPS_PORT env variable, fallback to Port 443 */}}
+  {{$https_port := coalesce $container.Env.AMAZEEIO_HTTPS_PORT "443" }}
+backend https_{{$host}}
+  mode http
+  {{ $address := where $container.Addresses "Port" $https_port | first }}
+  {{ template "upstream_ssl" (dict "Container" $container "Address" $address) }}
 {{end}}
 
 {{range $key, $container := whereExist $ "Env.LAGOON_LOCALDEV_HTTP_PORT" }}
