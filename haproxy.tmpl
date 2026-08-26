@@ -6,7 +6,7 @@
   server {{ .Address.IP }}:{{ .Address.Port }} {{ .Address.IP }}:{{ .Address.Port }} check
     {{ else }}
   # {{ .Container.Name }}
-  server {{ .Container.Name }}:{{ .Address.Port }} {{ .Container.Name }}:{{ .Address.Port }} check
+  server {{ .Container.Name }}:{{ .Address.Port }} {{ .Container.Name }}:{{ .Address.Port }} check init-addr last,libc,none
     {{ end }}
   {{ end }}
 {{ end }}
@@ -15,6 +15,7 @@ global
   daemon
   maxconn 1024
   pidfile /var/run/haproxy.pid
+  tune.bufsize 32768
 
 defaults
   balance roundrobin
@@ -46,24 +47,27 @@ frontend http
   use_backend http_{{$host}} if { hdr_dom(host) -i {{$host}} }
 {{end}}
 
+{{if exists "/app/server.pem"}}
 frontend https
   mode http
   bind *:443 ssl crt /app/server.pem
-  reqadd X-Forwarded-Proto:\ https
+  http-request add-header X-Forwarded-Proto https
+  option forwardfor
   option socket-stats
 
   stats enable
   stats refresh 30s
   stats show-node
-  stats uri  /stats
+  stats uri /stats
 {{range $key, $container := whereExist $ "Env.AMAZEEIO" }}
-        {{$host := coalesce $container.Env.AMAZEEIO_URL $container.Name }}
+  {{$host := coalesce $container.Env.AMAZEEIO_URL $container.Name }}
   use_backend http_{{$host}} if { hdr_dom(host) -i {{$host}} }
 {{end}}
 {{range $key, $container := whereExist $ "Env.LAGOON_LOCALDEV_HTTP_PORT" }}
   {{/* Allow containers to set their hostname via the env variable LAGOON_ROUTE if not set, fall back to the container name and projectname. Also remove http:// and https:// */}}
   {{$host := replace (replace (coalesce $container.Env.LAGOON_LOCALDEV_URL $container.Env.LAGOON_ROUTE  (printf "%s.docker.amazee.io" $container.Name)) "http://" "" 1) "https://" "" 1 }}
   use_backend http_{{$host}} if { hdr_dom(host) -i {{$host}} }
+{{end}}
 {{end}}
 
 {{range $key, $container := whereExist $ "Env.AMAZEEIO" }}

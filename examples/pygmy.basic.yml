@@ -1,0 +1,35 @@
+services:
+
+  amazeeio-dnsmasq:
+    Config:
+      Labels:
+        - pygmy.hocuspocus: 42
+        - pygmy.abracadabra: true
+        - pygmy.opensesame: correct
+
+  amazeeio-haproxy:
+    image: ghcr.io/pygmystack/haproxy:main
+    Config:
+      Labels:
+        - pygmy.hocuspocus: 42
+        - pygmy.abracadabra: true
+        - pygmy.opensesame: correct
+
+  amazeeio-mailhog:
+    Config:
+      Labels:
+        - pygmy.hocuspocus: 42
+        - pygmy.abracadabra: true
+        - pygmy.opensesame: correct
+
+  amazeeio-ssh-agent:
+    Config:
+      Labels:
+        - pygmy.hocuspocus: 42
+        - pygmy.abracadabra: true
+        - pygmy.opensesame: correct
+
+  amazeeio-ssh-agent-add-key:
+    Config:
+      Labels:
+        - pygmy.enable: false

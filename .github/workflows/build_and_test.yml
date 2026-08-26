@@ -1,0 +1,22 @@
+name: Build, Test & Publish
+
+on:
+  push:
+    branches:
+      - "main"
+      - "dev"
+    tags:
+      - 'v*.*.*'
+  pull_request:
+    branches:
+      - 'main'
+
+jobs:
+  ci:
+    uses: pygmystack/.github/.github/workflows/container-build-test-publish.yml@main
+    with:
+      image_name: haproxy
+      replace_source: ghcr.io/pygmystack/haproxy:main
+      oc_authors: the pygmy stack, The HAProxy Community (HAProxy)
+      oc_description: HAProxy reverse proxy, configured for use with the pygmy stack
+    secrets: inherit

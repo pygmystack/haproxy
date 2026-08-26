@@ -4,9 +4,7 @@ This image is a multiarchitecture compatible docker image
 
 This build a docker image from [haproxy](https://github.com/haproxy/haproxy/) with [nginx-proxy/docker-gen](https://github.com/nginx-proxy/docker-gen) pre-installed and configured to serve as a reverse proxy.
 
-# amazee.io haproxy
-
-This Images is part of the [amazee.io local docker development environment](https://docs.amazee.io/local_docker_development/local_docker_development.html). It provides a haproxy that serves as an reverse proxy in front of multiple Containers. This allows us to access multiple containers via nice URLs without the need to publish or know the ports of the containers.
+This images provides a haproxy that serves as an reverse proxy in front of multiple Containers. This allows us to access multiple containers via nice URLs without the need to publish or know the ports of the containers.
 
 ## Usage
 
@@ -44,8 +42,6 @@ Example:
 The haproxy exposes it's status page on `/stats` (like: http://docker.amazee.io/stats if used with amazee.io). There you can see the containers, their ports and their URLs for which reverse proxy entries are made.
 
 If something doesn't work at all, run `haproxy -f haproxy.cfg -d` within the running container (it should be running even if there is an haproxy error), this will start haproxy in debug mode and should show you possible errors.
-
-If all fails, join the amazee.io slack channel at https://slack.amazee.io, we're glad to help.
 
 ## Development
 
