@@ -11,6 +11,19 @@
   {{ end }}
 {{ end }}
 
+{{ define "upstream_ssl" }}
+  {{ if .Address }}
+    {{/* If port is not published on host, use container's IP:PORT */}}
+    {{ if .Address.IP }}
+  # {{ .Container.Name }}
+  server {{ .Address.IP }}:{{ .Address.Port }} {{ .Address.IP }}:{{ .Address.Port }} check ssl verify none
+    {{ else }}
+  # {{ .Container.Name }}
+  server {{ .Container.Name }}:{{ .Address.Port }} {{ .Container.Name }}:{{ .Address.Port }} check ssl verify none init-addr last,libc,none
+    {{ end }}
+  {{ end }}
+{{ end }}
+
 global
   daemon
   maxconn 1024
@@ -61,12 +74,18 @@ frontend https
   stats uri /stats
 {{range $key, $container := whereExist $ "Env.AMAZEEIO" }}
   {{$host := coalesce $container.Env.AMAZEEIO_URL $container.Name }}
+  use_backend https_{{$host}} if { hdr_dom(host) -i {{$host}} } { nbsrv(https_{{$host}}) gt 0 }
   use_backend http_{{$host}} if { hdr_dom(host) -i {{$host}} }
 {{end}}
 {{range $key, $container := whereExist $ "Env.LAGOON_LOCALDEV_HTTP_PORT" }}
   {{/* Allow containers to set their hostname via the env variable LAGOON_ROUTE if not set, fall back to the container name and projectname. Also remove http:// and https:// */}}
   {{$host := replace (replace (coalesce $container.Env.LAGOON_LOCALDEV_URL $container.Env.LAGOON_ROUTE  (printf "%s.docker.amazee.io" $container.Name)) "http://" "" 1) "https://" "" 1 }}
   use_backend http_{{$host}} if { hdr_dom(host) -i {{$host}} }
+{{end}}
+{{range $key, $container := whereExist $ "Env.LAGOON_LOCALDEV_HTTPS_PORT" }}
+  {{/* Allow containers to set their hostname via the env variable LAGOON_ROUTE if not set, fall back to the container name and projectname. Also remove http:// and https:// */}}
+  {{$host := replace (replace (coalesce $container.Env.LAGOON_LOCALDEV_URL $container.Env.LAGOON_ROUTE  (printf "%s.docker.amazee.io" $container.Name)) "http://" "" 1) "https://" "" 1 }}
+  use_backend https_{{$host}} if { hdr_dom(host) -i {{$host}} } { nbsrv(https_{{$host}}) gt 0 }
 {{end}}
 {{end}}
 
@@ -80,6 +99,16 @@ backend http_{{$host}}
   {{ template "upstream" (dict "Container" $container "Address" $address) }}
 {{end}}
 
+{{range $key, $container := whereExist $ "Env.AMAZEEIO" }}
+  {{$host := coalesce $container.Env.AMAZEEIO_URL $container.Name }}
+  {{/* Allow containers to set their port for HTTPS connections via AMAZEEIO_HTTPS_PORT env variable, fallback to Port 443 */}}
+  {{$https_port := coalesce $container.Env.AMAZEEIO_HTTPS_PORT "443" }}
+backend https_{{$host}}
+  mode http
+  {{ $address := where $container.Addresses "Port" $https_port | first }}
+  {{ template "upstream_ssl" (dict "Container" $container "Address" $address) }}
+{{end}}
+
 {{range $key, $container := whereExist $ "Env.LAGOON_LOCALDEV_HTTP_PORT" }}
   {{$host := replace (replace (coalesce $container.Env.LAGOON_LOCALDEV_URL $container.Env.LAGOON_ROUTE  (printf "%s.docker.amazee.io" $container.Name)) "http://" "" 1) "https://" "" 1 }}
   {{/* Allow containers to set their the port for HTTP connections via LAGOON_LOCALDEV_HTTP_PORT env variable, fallback to Port 8080 */}}
@@ -88,4 +117,14 @@ backend http_{{$host}}
   mode http
   {{ $address := where $container.Addresses "Port" $http_port | first }}
   {{ template "upstream" (dict "Container" $container "Address" $address) }}
+{{end}}
+
+{{range $key, $container := whereExist $ "Env.LAGOON_LOCALDEV_HTTPS_PORT" }}
+  {{$host := replace (replace (coalesce $container.Env.LAGOON_LOCALDEV_URL $container.Env.LAGOON_ROUTE  (printf "%s.docker.amazee.io" $container.Name)) "http://" "" 1) "https://" "" 1 }}
+  {{/* Allow containers to set their port for HTTPS connections via LAGOON_LOCALDEV_HTTPS_PORT env variable */}}
+  {{$https_port := $container.Env.LAGOON_LOCALDEV_HTTPS_PORT }}
+backend https_{{$host}}
+  mode http
+  {{ $address := where $container.Addresses "Port" $https_port | first }}
+  {{ template "upstream_ssl" (dict "Container" $container "Address" $address) }}
 {{end}}
